@@ -146,6 +146,7 @@ def parse_args():
 	filter_parser=parser.add_argument_group('Filters')
 	filter_parser.add_argument('-h','--host', help='Host', required=False)
 	filter_parser.add_argument('-s','--service', help='Service', required=False)
+	filter_parser.add_argument('-d','--downtime', help='Downtime', required=False)
 
 	downtime_parser=parser.add_argument_group('Downtimes')
 	downtime_parser.add_argument('-S','--start', help='Start time', required=False, nargs='+')
@@ -168,108 +169,119 @@ def parse_args():
 		from IPython import embed
 		global debug
 		debug=True
+		print(opts)
 
-	if opts.service and opts.not_all_services is True:
-		print("Not downtiming all services (-n) doesn't make sense with a service filter (-s)")
-		exit(5)
-
-	if not opts.host:
-		opts.host = getfqdn()
-
-	now = datetime.now()
-	if opts.start == 'now':
-		opts.start = datetime.now()
-	else:
-		opts.start=parse_datetime(opts.start)
-
-	if opts.end == '60 minutes':
-		opts.end = opts.start + timedelta(hours=1)
-	else:
-		opts.end=parse_datetime(opts.end, opts.start)
-
-	if opts.end < opts.start:
-		print('End time needs to be after start time')
-		exit(5)
-
-	if opts.flexible is not False:
-		opts.duration=parse_duration(opts.flexible)
-		opts.fixed=False
-	else:
-		opts.fixed=True
-
-	if opts.comment is not None: 
-		opts.comment=' '.join(opts.comment)
-		if opts.author is not None:
-			opts.author=opts.author
-		elif os.environ['USER'] != 'root':
-			opts.author=os.environ['USER']
-		elif os.environ['USER'] == 'root' and os.environ['SUDO_USER'] is not None:
-			opts.author=os.environ['SUDO_USER']
-		else:
-			print("Refusing to use 'root' as author. If you really want this, pass it with --author")
+	if opts.downtime != None:
+		if (opts.host != None or opts.service != None or opts.start != 'now' or opts.end != '60 minutes' or opts.flexible or opts.not_all_services or opts.author != None or opts.comment != None or opts.child_options != 'DowntimeNoChildren'):
+			print("Downtime (-d) doesn't take any other arguments.")
 			exit(5)
-
-		opts.api_endpoint="/actions/schedule-downtime"
-		opts.api_query=urlencode({})
-		opts.override_post=False
-
-		opts.filter_string='{'
-		if opts.host and not opts.service:
-			opts.filter_string+='"type": "Host",'
-			opts.filter_string+='"filter": "match(pattern_host,host.display_name)",'
-			opts.filter_string+='"filter_vars": { "pattern_host": "*'+opts.host+'*" },'
-		elif not opts.host and opts.service:
-			opts.filter_string+='"type": "Service",'
-			opts.filter_string+='"filter": "match(pattern_service,service.name)",'
-			opts.filter_string+='"filter_vars": { "pattern_service": "*'+(opts.service if opts.service else '')+'*" },'
-		elif opts.host and opts.service:
-			opts.filter_string+='"type": "Service",'
-			opts.filter_string+='"filter": "match(pattern_service,service.name) && match(pattern_host,service.host_name)",'
-			opts.filter_string+='"filter_vars": { "pattern_service": "*'+(opts.service if opts.service else '')+'*", "pattern_host": "*'+(opts.host if opts.host else '')+'*" },'
-
-		if opts.fixed is False:
-			opts.filter_string+='"fixed": false,'
-			opts.filter_string+='"duration": '+str(opts.duration.total_seconds())+','
-
-		if opts.not_all_services:
-			opts.filter_string+='"all_services": false,'
 		else:
-			opts.filter_string+='"all_services": true,'
-
-		opts.filter_string+='\
-			"author": "'+opts.author+'",\
-			"start_time": "'+opts.start.strftime('%s')+'",\
-			"end_time": "'+opts.end.strftime('%s')+'",\
-			"comment": "'+opts.comment+'"\
-		}'
-
-	elif opts.comment is None:
-		opts.override_post=True
-		if opts.service is not None:
-			opts.api_endpoint='/objects/services/'
-			opts.api_query=urlencode({
-				'type': 'Service',
-			})
-			opts.filter_string='{ "filter": "match(pattern_service,service.name) && match(pattern_host,service.host_name)",\
-				"filter_vars": {\
-					"pattern_service": "*'+opts.service+'*",\
-					"pattern_host": "*'+(opts.host if opts.host else '')+'*"\
-				}\
-			}'
-		else:
-			opts.api_endpoint='/objects/hosts/'
-			opts.api_query=urlencode({
-				'type': 'Host',
-			})
-			opts.filter_string='{ "filter": "match(pattern,host.name)",\
-				"filter_vars": {\
-					"pattern": "*'+opts.host+'*"\
-				}\
-			}'
+			opts.api_endpoint="/actions/remove-downtime"
+			opts.api_query=urlencode({})
+			opts.override_post=False
+			opts.filter_string='{ "downtime": "'+opts.downtime.rstrip()+'"}'
 	else:
-		print('Something\'s really weird here.')
-		exit(23)
-
+		if opts.service and opts.not_all_services is True:
+			print("Not downtiming all services (-n) doesn't make sense with a service filter (-s)")
+			exit(5)
+	
+		if not opts.host:
+			opts.host = getfqdn()
+	
+		now = datetime.now()
+		if opts.start == 'now':
+			opts.start = datetime.now()
+		else:
+			opts.start=parse_datetime(opts.start)
+	
+		if opts.end == '60 minutes':
+			opts.end = opts.start + timedelta(hours=1)
+		else:
+			opts.end=parse_datetime(opts.end, opts.start)
+	
+		if opts.end < opts.start:
+			print('End time needs to be after start time')
+			exit(5)
+	
+		if opts.flexible is not False:
+			opts.duration=parse_duration(opts.flexible)
+			opts.fixed=False
+		else:
+			opts.fixed=True
+	
+		if opts.comment is not None: 
+			opts.comment=' '.join(opts.comment)
+			if opts.author is not None:
+				opts.author=opts.author
+			elif os.environ['USER'] != 'root':
+				opts.author=os.environ['USER']
+			elif os.environ['USER'] == 'root' and os.environ['SUDO_USER'] is not None:
+				opts.author=os.environ['SUDO_USER']
+			else:
+				print("Refusing to use 'root' as author. If you really want this, pass it with --author")
+				exit(5)
+	
+			opts.api_endpoint="/actions/schedule-downtime"
+			opts.api_query=urlencode({})
+			opts.override_post=False
+	
+			opts.filter_string='{'
+			if opts.host and not opts.service:
+				opts.filter_string+='"type": "Host",'
+				opts.filter_string+='"filter": "match(pattern_host,host.display_name)",'
+				opts.filter_string+='"filter_vars": { "pattern_host": "*'+opts.host+'*" },'
+			elif not opts.host and opts.service:
+				opts.filter_string+='"type": "Service",'
+				opts.filter_string+='"filter": "match(pattern_service,service.name)",'
+				opts.filter_string+='"filter_vars": { "pattern_service": "*'+(opts.service if opts.service else '')+'*" },'
+			elif opts.host and opts.service:
+				opts.filter_string+='"type": "Service",'
+				opts.filter_string+='"filter": "match(pattern_service,service.name) && match(pattern_host,service.host_name)",'
+				opts.filter_string+='"filter_vars": { "pattern_service": "*'+(opts.service if opts.service else '')+'*", "pattern_host": "*'+(opts.host if opts.host else '')+'*" },'
+	
+			if opts.fixed is False:
+				opts.filter_string+='"fixed": false,'
+				opts.filter_string+='"duration": '+str(opts.duration.total_seconds())+','
+	
+			if opts.not_all_services:
+				opts.filter_string+='"all_services": false,'
+			else:
+				opts.filter_string+='"all_services": true,'
+	
+			opts.filter_string+='\
+				"author": "'+opts.author+'",\
+				"start_time": "'+opts.start.strftime('%s')+'",\
+				"end_time": "'+opts.end.strftime('%s')+'",\
+				"comment": "'+opts.comment+'"\
+			}'
+	
+		elif opts.comment is None:
+			opts.override_post=True
+			if opts.service is not None:
+				opts.api_endpoint='/objects/services/'
+				opts.api_query=urlencode({
+					'type': 'Service',
+				})
+				opts.filter_string='{ "filter": "match(pattern_service,service.name) && match(pattern_host,service.host_name)",\
+					"filter_vars": {\
+						"pattern_service": "*'+opts.service+'*",\
+						"pattern_host": "*'+(opts.host if opts.host else '')+'*"\
+					}\
+				}'
+			else:
+				opts.api_endpoint='/objects/hosts/'
+				opts.api_query=urlencode({
+					'type': 'Host',
+				})
+				opts.filter_string='{ "filter": "match(pattern,host.name)",\
+					"filter_vars": {\
+						"pattern": "*'+opts.host+'*"\
+					}\
+				}'
+		else:
+			print('Something\'s really weird here.')
+			exit(23)
+	
 	if opts.debug:
 		print(colors.HEADER+'opts'+colors.ENDC+': '+str(opts))
 	return(opts)
@@ -337,9 +349,9 @@ def main():
 	result=loads(body)
 
 	if 'error' in result:
-		print('Icinga returned a '+str(result['error'])+' error: '+result['status'])
+		print('Icinga returned a '+colors.FAIL+str(result['error'])+colors.ENDC+' error: '+colors.WARNING+result['status']+colors.ENDC)
 	else:
-		if opts.comment is None:
+		if opts.downtime is None and opts.comment is None:
 			print('Found the following objects:')
 			if len(result['results']) == 0:
 				print(colors.FAIL+'  None'+colors.ENDC)
@@ -355,9 +367,13 @@ def main():
 				print('Add a comment (-c) to actually set the downtime')
 
 		else:
+			if opts.downtime != None:
+				field='status'
+			else:
+				field='name'
 			for i in result['results']:
 				if i['code'] == 200:
-					print(colors.OKGREEN+str(i['code'])+colors.ENDC+": "+str(i['name']))
+					print(colors.OKGREEN+str(i['code'])+colors.ENDC+": "+str(i[field]))
 				else:
 					print(colors.WARNING+str(i['code'])+colors.ENDC+": "+str(i['status']))
 
