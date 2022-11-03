@@ -1,0 +1,374 @@
+#!/usr/bin/env python
+
+# Script to set downtime(s) in Icinga2
+
+debug=False
+connecttimeout=3
+timeout=10
+
+api_user='puppet'
+api_pass=list(open('/etc/icinga2/puppet.password'))[0].strip()
+
+api_proto='https'
+#api_host='HOSTNAME'
+api_host='HOSTNAME'
+api_port='5665'
+api_path='/v1'
+api_url=api_proto+'://'+api_host+':'+api_port+api_path
+
+downtime_db='/var/lib/icinga2/downtime.lst'
+
+import argparse
+from socket import getfqdn
+from datetime import datetime
+from datetime import timedelta
+from json import loads
+import os
+import pycurl
+import re
+try:
+	from urllib import urlencode
+except ImportError:
+	from urllib.parse import urlencode
+	from urllib.parse import quote
+try:
+  from io import BytesIO
+except ImportError:
+  from StringIO import StringIO as BytesIO
+
+class colors:
+	HEADER = '\033[95m'
+	OKBLUE = '\033[94m'
+	OKCYAN = '\033[96m'
+	OKGREEN = '\033[92m'
+	WARNING = '\033[93m'
+	FAIL = '\033[91m'
+	ENDC = '\033[0m'
+	BOLD = '\033[1m'
+	UNDERLINE = '\033[4m'
+
+def show_datehelp():
+	datehelp ="You can use dates in the following formats:\n"
+	datehelp+="\n"
+	datehelp+="  YYYY-MM-DD\n"
+	datehelp+="  YY-MM-DD\n"
+	datehelp+="  MM-DD\n"
+	datehelp+="  YYYYMMDD\n"
+	datehelp+="  YYMMDD\n"
+	datehelp+="  MMDD\n"
+	print(datehelp)
+
+def parse_datetime(datetime_list, base_time=datetime.now()):
+	if len(datetime_list) > 2:
+		print('Give DATE and TIME as two arguments.')
+		exit(5)
+
+	duration_regex = re.compile('.*[wdhms]')
+	date_regexes = map(re.compile, ['^\d\d\d\d$', '^\d\d\d\d\d\d$', '^\d\d\d\d\d\d\d\d$', '^\d\d\d\d-\d\d-\d\d$', '^\d\d-\d\d-\d\d$', '^\d\d-\d\d$'])
+	time_regexes = map(re.compile, ['^\d\d:\d\d$', '^\d\d\d\d$'])
+
+	if len(datetime_list) == 2:
+		if not any(regex.match(datetime_list[1]) for regex in time_regexes):
+			print('Second argument needs to be time of day as HH:MM or HHMM')
+			exit(5)
+		else:
+			parsed_time=parse_time(datetime_list[1])
+		if duration_regex.match(datetime_list[0]):
+			parsed_day=datetime.today()+parse_duration(datetime_list[0])
+		elif any(regex.match(datetime_list[0]) for regex in date_regexes):
+			parsed_day=parse_date(datetime_list[0])
+		else:
+			show_datehelp()
+			exit(5)
+		parsed_datetime=datetime.combine(parsed_day, parsed_time.time())
+	elif len(datetime_list) == 1:
+		if duration_regex.match(datetime_list[0]):
+			parsed_datetime=base_time+parse_duration(datetime_list[0])
+		elif any(regex.match(datetime_list[0]) for regex in time_regexes):
+			parsed_datetime=datetime.combine(datetime.today(), parse_time(datetime_list[0]).time())
+		elif any(regex.match(datetime_list[0]) for regex in date_regexes):
+			parsed_datetime=parse_date(datetime_list[0])
+		else:
+			show_datehelp()
+			exit(5)
+
+	return(parsed_datetime)
+
+def parse_date(date_str, fmts=['%m%d', '%y%m%d', '%Y%m%d', '%y-%m-%d', '%Y-%m-%d', '%m-%d']):
+	if re.compile('\d{4}$').match(date_str):
+		date_str=str(datetime.now().year)+date_str
+	for fmt in fmts:
+		try:
+			return datetime.strptime(date_str, fmt)
+		except:
+			continue
+
+	show_datehelp()
+	exit(5)
+
+def parse_time(time_str, fmts=['%H:%M', '%H%M']):
+	for fmt in fmts:
+		try:
+			return datetime.strptime(time_str, fmt)
+		except:
+			continue
+
+	print("Couldn't parse time string")
+	exit(5)
+
+def parse_duration(time_str):
+	"""
+	Parse a time string e.g. '2h 13m' or '1.5d' into a timedelta object.
+	Based on Peter's answer at https://stackoverflow.com/a/51916936/2445204
+	and virhilo's answer at https://stackoverflow.com/a/4628148/851699
+	:param time_str: A string identifying a duration, e.g. '2h13.5m'
+	:return datetime.timedelta: A datetime.timedelta object
+	"""
+	regex = re.compile(
+					   r'^((?P<weeks>[\.\d]+?)w)?'
+					   r'((?P<days>[\.\d]+?)d)?'
+					   r'((?P<hours>[\.\d]+?)h)?'
+					   r'((?P<minutes>[\.\d]+?)m)?'
+					   r'((?P<seconds>[\.\d]+?)s?)?$')
+
+	parts = regex.match(time_str)
+	assert parts is not None, """Could not parse any time information from '{}'.
+	Examples of valid strings: '8h', '2d 8h 5m 2s', '2m4.3s'""".format(time_str)
+	time_params = {name: float(param)
+				   for name, param in parts.groupdict().items() if param}
+	return timedelta(**time_params)
+
+def parse_args():
+	parser = argparse.ArgumentParser(description='Set and remove downtimes from Icinga2', add_help=False)
+	parser.add_argument('--help', action='help', help='Show this help message and exit')
+	parser.add_argument('--debug', help='Debug mode', required=False, action='store_true')
+	parser.add_argument('--idebug', help='Interactive debug mode', required=False, action='store_true')
+	parser.add_argument('--version', action='version', version='%(prog)s 0.1.0')
+
+	filter_parser=parser.add_argument_group('Filters')
+	filter_parser.add_argument('-h','--host', help='Host', required=False)
+	filter_parser.add_argument('-s','--service', help='Service', required=False)
+
+	downtime_parser=parser.add_argument_group('Downtimes')
+	downtime_parser.add_argument('-S','--start', help='Start time', required=False, nargs='+')
+	downtime_parser.add_argument('-E','--end', help='End time', required=False, nargs='+')
+	downtime_parser.add_argument('-f','--flexible', help='Flexible downtime duration', metavar='DURATION', required=False)
+	downtime_parser.add_argument('-n','--not-all-services', help='Do NOT set downtime for all services when setting host downtime', required=False, action='store_true')
+	downtime_parser.set_defaults(start='now')
+	downtime_parser.set_defaults(end='60 minutes')
+	downtime_parser.set_defaults(flexible=False)
+	downtime_parser.set_defaults(child_options="DowntimeNoChildren")
+	downtime_parser.add_argument('-a','--author', help='Author', required=False)
+	downtime_parser.add_argument('-c','--comment', help='Comment - set this to actually set the downtime', required=False, nargs='+')
+
+	opts=parser.parse_args()
+
+	if opts.idebug:
+		opts.debug=True
+
+	if opts.debug:
+		from IPython import embed
+		global debug
+		debug=True
+
+	if opts.service and opts.not_all_services is True:
+		print("Not downtiming all services (-n) doesn't make sense with a service filter (-s)")
+		exit(5)
+
+	if not opts.host:
+		opts.host = getfqdn()
+
+	now = datetime.now()
+	if opts.start == 'now':
+		opts.start = datetime.now()
+	else:
+		opts.start=parse_datetime(opts.start)
+
+	if opts.end == '60 minutes':
+		opts.end = opts.start + timedelta(hours=1)
+	else:
+		opts.end=parse_datetime(opts.end, opts.start)
+
+	if opts.end < opts.start:
+		print('End time needs to be after start time')
+		exit(5)
+
+	if opts.flexible is not False:
+		opts.duration=parse_duration(opts.flexible)
+		opts.fixed=False
+	else:
+		opts.fixed=True
+
+	if opts.comment is not None: 
+		opts.comment=' '.join(opts.comment)
+		if opts.author is not None:
+			opts.author=opts.author
+		elif os.environ['USER'] != 'root':
+			opts.author=os.environ['USER']
+		elif os.environ['USER'] == 'root' and os.environ['SUDO_USER'] is not None:
+			opts.author=os.environ['SUDO_USER']
+		else:
+			print("Refusing to use 'root' as author. If you really want this, pass it with --author")
+			exit(5)
+
+		opts.api_endpoint="/actions/schedule-downtime"
+		opts.api_query=urlencode({})
+		opts.override_post=False
+
+		opts.filter_string='{'
+		if opts.host and not opts.service:
+			opts.filter_string+='"type": "Host",'
+			opts.filter_string+='"filter": "match(pattern_host,host.display_name)",'
+			opts.filter_string+='"filter_vars": { "pattern_host": "*'+opts.host+'*" },'
+		elif not opts.host and opts.service:
+			opts.filter_string+='"type": "Service",'
+			opts.filter_string+='"filter": "match(pattern_service,service.name)",'
+			opts.filter_string+='"filter_vars": { "pattern_service": "*'+(opts.service if opts.service else '')+'*" },'
+		elif opts.host and opts.service:
+			opts.filter_string+='"type": "Service",'
+			opts.filter_string+='"filter": "match(pattern_service,service.name) && match(pattern_host,service.host_name)",'
+			opts.filter_string+='"filter_vars": { "pattern_service": "*'+(opts.service if opts.service else '')+'*", "pattern_host": "*'+(opts.host if opts.host else '')+'*" },'
+
+		if opts.fixed is False:
+			opts.filter_string+='"fixed": false,'
+			opts.filter_string+='"duration": '+str(opts.duration.total_seconds())+','
+
+		if opts.not_all_services:
+			opts.filter_string+='"all_services": false,'
+		else:
+			opts.filter_string+='"all_services": true,'
+
+		opts.filter_string+='\
+			"author": "'+opts.author+'",\
+			"start_time": "'+opts.start.strftime('%s')+'",\
+			"end_time": "'+opts.end.strftime('%s')+'",\
+			"comment": "'+opts.comment+'"\
+		}'
+
+	elif opts.comment is None:
+		opts.override_post=True
+		if opts.service is not None:
+			opts.api_endpoint='/objects/services/'
+			opts.api_query=urlencode({
+				'type': 'Service',
+			})
+			opts.filter_string='{ "filter": "match(pattern_service,service.name) && match(pattern_host,service.host_name)",\
+				"filter_vars": {\
+					"pattern_service": "*'+opts.service+'*",\
+					"pattern_host": "*'+(opts.host if opts.host else '')+'*"\
+				}\
+			}'
+		else:
+			opts.api_endpoint='/objects/hosts/'
+			opts.api_query=urlencode({
+				'type': 'Host',
+			})
+			opts.filter_string='{ "filter": "match(pattern,host.name)",\
+				"filter_vars": {\
+					"pattern": "*'+opts.host+'*"\
+				}\
+			}'
+	else:
+		print('Something\'s really weird here.')
+		exit(23)
+
+	if opts.debug:
+		print(colors.HEADER+'opts'+colors.ENDC+': '+str(opts))
+	return(opts)
+
+headers = {}
+def header_function(header_line):
+	header_line = header_line.decode('iso-8859-1')
+	if ':' not in header_line:
+		return
+	name, value = header_line.split(':', 1)
+	name = name.strip()
+	value = value.strip()
+	name = name.lower()
+	headers[name] = value
+
+def curl(api_uri, override_post=False, filter_string=None):
+	if debug: 
+		print(colors.HEADER+'api_url'+colors.ENDC+': '+api_url)
+	buffer = BytesIO()
+	c = pycurl.Curl()
+	c.setopt(c.URL, api_uri)
+	if filter_string is not None: c.setopt(c.POSTFIELDS, filter_string)
+	if debug: c.setopt(c.WRITEDATA, buffer)
+	c.setopt(c.WRITEFUNCTION, buffer.write)
+	c.setopt(pycurl.SSL_VERIFYPEER, 0)
+	c.setopt(pycurl.SSL_VERIFYHOST, 0)
+	if override_post:
+			c.setopt(pycurl.HTTPHEADER, ['Accept: application/json', 'X-HTTP-Method-Override: GET'])
+	else:
+			c.setopt(pycurl.HTTPHEADER, ['Accept: application/json'])
+	c.setopt(pycurl.CONNECTTIMEOUT, connecttimeout)
+	c.setopt(pycurl.TIMEOUT, timeout)
+	c.setopt(c.USERPWD, api_user+':'+api_pass)
+	c.setopt(c.FOLLOWLOCATION, True)
+	c.setopt(c.HEADERFUNCTION, header_function)
+	#c.setopt(pycurl.PROXY, "socks://10.0.2.2:8282")
+	c.setopt(pycurl.PROXYTYPE, pycurl.PROXYTYPE_SOCKS5)
+	c.perform()
+	if debug: print(colors.HEADER+'Status'+colors.ENDC+': %d' % c.getinfo(c.RESPONSE_CODE))
+	
+	encoding = None
+	if 'content-type' in headers:
+			content_type = headers['content-type'].lower()
+			match = re.search('charset=(\S+)', content_type)
+			if match:
+					encoding = match.group(1)
+					if debug:
+						print(colors.OKBLUE+'Decoding using %s' % encoding)
+						print(colors.ENDC)
+	if encoding is None:
+			encoding = 'iso-8859-1'
+			if debug:
+				print(colors.OKBLUE+'Assuming encoding is %s' % encoding)
+				print(colors.ENDC)
+	body = buffer.getvalue().decode(encoding)
+	return(body)
+
+def main():
+	global api_url
+
+	opts=parse_args()
+
+	api_uri=api_url+opts.api_endpoint+'?'+opts.api_query
+	body=curl(api_uri, opts.override_post, opts.filter_string)
+	result=loads(body)
+
+	if 'error' in result:
+		print('Icinga returned a '+str(result['error'])+' error: '+result['status'])
+	else:
+		if opts.comment is None:
+			print('Found the following objects:')
+			if len(result['results']) == 0:
+				print(colors.FAIL+'  None'+colors.ENDC)
+			else:
+				for key in result['results']:
+					print("  "+key['attrs']['__name'])
+			print('And interpreting times as:')
+			print("  Start: "+opts.start.strftime('%Y-%m-%d %H:%M:%S'))
+			print("  End  : "+opts.end.strftime('%Y-%m-%d %H:%M:%S'))
+			if opts.fixed is False:
+				print("  Flexible downtime with duration: "+opts.duration)
+			if len(result['results']) > 0:
+				print('Add a comment (-c) to actually set the downtime')
+
+		else:
+			f = open(downtime_db, 'a')
+			for i in result['results']:
+				if i['code'] == 200:
+					print(colors.OKGREEN+str(i['code'])+colors.ENDC+": "+str(i['name']))
+					f.write(str(i['name'])+'\n')
+				else:
+					print(colors.WARNING+str(i['code'])+colors.ENDC+": "+str(i['status']))
+			f.close()
+
+	if opts.idebug:
+		from IPython import embed
+		embed()
+
+if __name__ == '__main__':
+	main()
