@@ -16,8 +16,6 @@ api_port='5665'
 api_path='/v1'
 api_url=api_proto+'://'+api_host+':'+api_port+api_path
 
-downtime_db='/var/lib/icinga2/downtime.lst'
-
 import argparse
 from socket import getfqdn
 from datetime import datetime
@@ -357,14 +355,11 @@ def main():
 				print('Add a comment (-c) to actually set the downtime')
 
 		else:
-			f = open(downtime_db, 'a')
 			for i in result['results']:
 				if i['code'] == 200:
 					print(colors.OKGREEN+str(i['code'])+colors.ENDC+": "+str(i['name']))
-					f.write(str(i['name'])+'\n')
 				else:
 					print(colors.WARNING+str(i['code'])+colors.ENDC+": "+str(i['status']))
-			f.close()
 
 	if opts.idebug:
 		from IPython import embed
