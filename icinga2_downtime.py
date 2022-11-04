@@ -2,6 +2,8 @@
 
 # Script to set downtime(s) in Icinga2
 
+from __future__ import print_function
+
 debug=False
 connecttimeout=3
 timeout=10
