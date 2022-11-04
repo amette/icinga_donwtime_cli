@@ -143,7 +143,7 @@ def parse_args():
 	parser.add_argument('--help', action='help', help='Show this help message and exit')
 	parser.add_argument('--debug', help='Debug mode', required=False, action='store_true')
 	parser.add_argument('--idebug', help='Interactive debug mode', required=False, action='store_true')
-	parser.add_argument('--version', action='version', version='%(prog)s 0.1.0')
+	parser.add_argument('--version', action='version', version='%(prog)s 0.1.0-dev')
 
 	filter_parser=parser.add_argument_group('Filters')
 	filter_parser.add_argument('-h','--host', help='Host', required=False)
