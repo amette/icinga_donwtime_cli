@@ -24,6 +24,7 @@ from json import loads
 import os
 import pycurl
 import re
+from sys import stderr
 try:
 	from urllib import urlencode
 except ImportError:
@@ -35,15 +36,34 @@ except ImportError:
   from StringIO import StringIO as BytesIO
 
 class colors:
-	HEADER = '\033[95m'
-	OKBLUE = '\033[94m'
-	OKCYAN = '\033[96m'
-	OKGREEN = '\033[92m'
-	WARNING = '\033[93m'
-	FAIL = '\033[91m'
-	ENDC = '\033[0m'
-	BOLD = '\033[1m'
-	UNDERLINE = '\033[4m'
+	def __init__(self):
+		self.set()
+	def set(self):
+		self.HEADER = '\033[95m'
+		self.OKBLUE = '\033[94m'
+		self.OKCYAN = '\033[96m'
+		self.OKGREEN = '\033[92m'
+		self.WARNING = '\033[93m'
+		self.FAIL = '\033[91m'
+		self.ENDC = '\033[0m'
+		self.BOLD = '\033[1m'
+		self.UNDERLINE = '\033[4m'
+
+	def unset(self):
+		self.HEADER = ''
+		self.OKBLUE = ''
+		self.OKCYAN = ''
+		self.OKGREEN = ''
+		self.WARNING = ''
+		self.FAIL = ''
+		self.ENDC = ''
+		self.BOLD = ''
+		self.UNDERLINE = ''
+
+color=colors()
+
+def eprint(*args, **kwargs):
+	print(*args, file=stderr, **kwargs)
 
 def show_datehelp():
 	datehelp ="You can use dates in the following formats:\n"
@@ -139,8 +159,8 @@ def parse_duration(time_str):
 def parse_args():
 	parser = argparse.ArgumentParser(description='Set and remove downtimes from Icinga2', add_help=False)
 	parser.add_argument('--help', action='help', help='Show this help message and exit')
-	parser.add_argument('--debug', help='Debug mode', required=False, action='store_true')
-	parser.add_argument('--idebug', help='Interactive debug mode', required=False, action='store_true')
+	parser.add_argument('--debug', required=False, action='store_true', help=argparse.SUPPRESS)
+	parser.add_argument('--idebug', required=False, action='store_true', help=argparse.SUPPRESS)
 	parser.add_argument('--version', action='version', version='%(prog)s 0.1.0-dev')
 
 	filter_parser=parser.add_argument_group('Filters')
@@ -160,6 +180,10 @@ def parse_args():
 	downtime_parser.add_argument('-a','--author', help='Author', required=False)
 	downtime_parser.add_argument('-c','--comment', help='Comment - set this to actually set the downtime', required=False, nargs='+')
 
+	parser.add_argument('--no-color', help='Don\'t use colored output', required=False, action='store_true')
+	parser.add_argument('--quiet', help='Minimal output', required=False, action='store_true')
+	parser.add_argument('--batch', help='Same as --no-color --quiet', required=False, action='store_true')
+
 	opts=parser.parse_args()
 
 	if opts.idebug:
@@ -170,6 +194,14 @@ def parse_args():
 		global debug
 		debug=True
 		print(opts)
+
+	if opts.batch:
+		opts.no_color=True
+		opts.quiet=True
+
+	if opts.no_color:
+		global color
+		color.unset()
 
 	if opts.downtime != None:
 		if (opts.host != None or opts.service != None or opts.start != 'now' or opts.end != '60 minutes' or opts.flexible or opts.not_all_services or opts.author != None or opts.comment != None or opts.child_options != 'DowntimeNoChildren'):
@@ -283,7 +315,7 @@ def parse_args():
 			exit(23)
 	
 	if opts.debug:
-		print(colors.HEADER+'opts'+colors.ENDC+': '+str(opts))
+		print(color.HEADER+'opts'+color.ENDC+': '+str(opts))
 	return(opts)
 
 headers = {}
@@ -299,7 +331,7 @@ def header_function(header_line):
 
 def curl(api_uri, override_post=False, filter_string=None):
 	if debug: 
-		print(colors.HEADER+'api_url'+colors.ENDC+': '+api_url)
+		print(color.HEADER+'api_url'+color.ENDC+': '+api_url)
 	buffer = BytesIO()
 	c = pycurl.Curl()
 	c.setopt(c.URL, api_uri)
@@ -320,7 +352,7 @@ def curl(api_uri, override_post=False, filter_string=None):
 	#c.setopt(pycurl.PROXY, "socks://10.0.2.2:8282")
 	c.setopt(pycurl.PROXYTYPE, pycurl.PROXYTYPE_SOCKS5)
 	c.perform()
-	if debug: print(colors.HEADER+'Status'+colors.ENDC+': %d' % c.getinfo(c.RESPONSE_CODE))
+	if debug: print(color.HEADER+'Status'+color.ENDC+': %d' % c.getinfo(c.RESPONSE_CODE))
 	
 	encoding = None
 	if 'content-type' in headers:
@@ -329,13 +361,13 @@ def curl(api_uri, override_post=False, filter_string=None):
 			if match:
 					encoding = match.group(1)
 					if debug:
-						print(colors.OKBLUE+'Decoding using %s' % encoding)
-						print(colors.ENDC)
+						print(color.OKBLUE+'Decoding using %s' % encoding)
+						print(color.ENDC)
 	if encoding is None:
 			encoding = 'iso-8859-1'
 			if debug:
-				print(colors.OKBLUE+'Assuming encoding is %s' % encoding)
-				print(colors.ENDC)
+				print(color.OKBLUE+'Assuming encoding is %s' % encoding)
+				print(color.ENDC)
 	body = buffer.getvalue().decode(encoding)
 	return(body)
 
@@ -349,12 +381,12 @@ def main():
 	result=loads(body)
 
 	if 'error' in result:
-		print('Icinga returned a '+colors.FAIL+str(result['error'])+colors.ENDC+' error: '+colors.WARNING+result['status']+colors.ENDC)
+		eprint('Icinga returned a '+color.FAIL+str(result['error'])+color.ENDC+' error: '+color.WARNING+result['status']+color.ENDC)
 	else:
 		if opts.downtime is None and opts.comment is None:
 			print('Found the following objects:')
 			if len(result['results']) == 0:
-				print(colors.FAIL+'  None'+colors.ENDC)
+				print(color.FAIL+'  None'+color.ENDC)
 			else:
 				for key in result['results']:
 					print("  "+key['attrs']['__name'])
@@ -373,9 +405,15 @@ def main():
 				field='name'
 			for i in result['results']:
 				if i['code'] == 200:
-					print(colors.OKGREEN+str(i['code'])+colors.ENDC+": "+str(i[field]))
+					if opts.quiet:
+						print(str(i[field]))
+					else:
+						print(color.OKGREEN+str(i['code'])+color.ENDC+": "+str(i[field]))
 				else:
-					print(colors.WARNING+str(i['code'])+colors.ENDC+": "+str(i['status']))
+					if opts.quiet:
+						eprint(str(i['status']))
+					else:
+						eprint(color.WARNING+str(i['code'])+color.ENDC+": "+str(i['status']))
 
 	if opts.idebug:
 		from IPython import embed
