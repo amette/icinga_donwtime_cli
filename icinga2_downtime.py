@@ -8,8 +8,8 @@ debug=False
 connecttimeout=3
 timeout=10
 
-api_user='puppet'
-api_pass=list(open('/etc/icinga2/puppet.password'))[0].strip()
+api_user='downtimecli'
+api_pass=list(open('/etc/icinga2/downtimecli.password'))[0].strip()
 
 api_proto='https'
 #api_host='HOSTNAME'
