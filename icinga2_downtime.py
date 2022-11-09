@@ -14,13 +14,17 @@ with open('/etc/icinga2/downtimecli.conf', 'r') as stream:
 
 api_user=cfg['user']
 api_pass=cfg['password']
+api_hosts=cfg['hosts']
 
 api_proto='https'
 #api_host='HOSTNAME'
 api_host='HOSTNAME'
 api_port='5665'
 api_path='/v1'
-api_url=api_proto+'://'+api_host+':'+api_port+api_path
+api_urls = []
+for host in api_hosts:
+	api_urls.append(api_proto+'://'+host+':'+api_port+api_path)
+api_url=api_urls[1]
 
 import argparse
 from socket import getfqdn
