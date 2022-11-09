@@ -17,8 +17,6 @@ api_pass=cfg['password']
 api_hosts=cfg['hosts']
 
 api_proto='https'
-#api_host='HOSTNAME'
-api_host='HOSTNAME'
 api_port='5665'
 api_path='/v1'
 api_urls = []
@@ -171,7 +169,7 @@ def parse_args():
 	parser.add_argument('--help', action='help', help='Show this help message and exit')
 	parser.add_argument('--debug', required=False, action='store_true', help=argparse.SUPPRESS)
 	parser.add_argument('--idebug', required=False, action='store_true', help=argparse.SUPPRESS)
-	parser.add_argument('--version', action='version', version='%(prog)s 0.2.0-rc1')
+	parser.add_argument('--version', action='version', version='%(prog)s 0.2.0-rc2')
 
 	filter_parser=parser.add_argument_group('Filters')
 	filter_parser.add_argument('-h','--host', help='Host', required=False)
