@@ -3,13 +3,17 @@
 # Script to set downtime(s) in Icinga2
 
 from __future__ import print_function
+import yaml
 
 debug=False
 connecttimeout=3
 timeout=10
 
-api_user='downtimecli'
-api_pass=list(open('/etc/icinga2/downtimecli.password'))[0].strip()
+with open('/etc/icinga2/downtimecli.conf', 'r') as stream:
+	cfg = yaml.safe_load(stream)
+
+api_user=cfg['user']
+api_pass=cfg['password']
 
 api_proto='https'
 #api_host='HOSTNAME'
@@ -348,7 +352,7 @@ def curl(api_uri, override_post=False, filter_string=None):
 			c.setopt(pycurl.HTTPHEADER, ['Accept: application/json'])
 	c.setopt(pycurl.CONNECTTIMEOUT, connecttimeout)
 	c.setopt(pycurl.TIMEOUT, timeout)
-	c.setopt(c.USERPWD, api_user+':'+api_pass)
+	c.setopt(c.USERPWD, (api_user+':'+api_pass).encode('utf8'))
 	c.setopt(c.FOLLOWLOCATION, True)
 	c.setopt(c.HEADERFUNCTION, header_function)
 	#c.setopt(pycurl.PROXY, "socks://10.0.2.2:8282")
