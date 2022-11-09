@@ -185,7 +185,7 @@ def parse_args():
 	downtime_parser.set_defaults(end='60 minutes')
 	downtime_parser.set_defaults(flexible=False)
 	downtime_parser.set_defaults(child_options="DowntimeNoChildren")
-	downtime_parser.add_argument('-a','--author', help='Author', required=False)
+	downtime_parser.add_argument('-a','--author', help='Author - use if your environment doesn\'t have SUDO_USER set', required=False)
 	downtime_parser.add_argument('-c','--comment', help='Comment - set this to actually set the downtime', required=False, nargs='+')
 
 	parser.add_argument('--no-color', help='Don\'t use colored output', required=False, action='store_true')
@@ -255,10 +255,10 @@ def parse_args():
 				opts.author=opts.author
 			elif os.environ['USER'] != 'root':
 				opts.author=os.environ['USER']
-			elif os.environ['USER'] == 'root' and os.environ['SUDO_USER'] is not None:
+			elif os.environ['USER'] == 'root' and 'SUDO_USER' in os.environ:
 				opts.author=os.environ['SUDO_USER']
 			else:
-				print("Refusing to use 'root' as author. If you really want this, pass it with --author")
+				print("Can't determine who you are. Please pass your user name with --author")
 				exit(5)
 	
 			opts.api_endpoint="/actions/schedule-downtime"
