@@ -390,6 +390,7 @@ def main():
 
 	if 'error' in result:
 		eprint('Icinga returned a '+color.FAIL+str(result['error'])+color.ENDC+' error: '+color.WARNING+result['status']+color.ENDC)
+		exit(3)
 	else:
 		if opts.downtime is None and opts.comment is None:
 			print('Found the following objects:')
