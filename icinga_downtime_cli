@@ -402,7 +402,7 @@ def main():
 			print("  Start: "+opts.start.strftime('%Y-%m-%d %H:%M:%S'))
 			print("  End  : "+opts.end.strftime('%Y-%m-%d %H:%M:%S'))
 			if opts.fixed is False:
-				print("  Flexible downtime with duration: "+opts.duration)
+				print("  Flexible downtime with duration: "+str(opts.duration))
 			if len(result['results']) > 0:
 				print('Add a comment (-c) to actually set the downtime')
 
