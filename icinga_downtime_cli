@@ -187,6 +187,7 @@ def parse_args():
 	downtime_parser.set_defaults(child_options="DowntimeNoChildren")
 	downtime_parser.add_argument('-a','--author', help='Author - use if your environment doesn\'t have SUDO_USER set', required=False)
 	downtime_parser.add_argument('-c','--comment', help='Comment - set this to actually set the downtime', required=False, nargs='+')
+	downtime_parser.add_argument('-C','--check', help='Schedule immediate check after setting or before removing downtime', required=False, action='store_true')
 
 	parser.add_argument('--no-color', help='Don\'t use colored output', required=False, action='store_true')
 	parser.add_argument('--quiet', help='Minimal output', required=False, action='store_true')
@@ -213,7 +214,7 @@ def parse_args():
 
 	if opts.downtime != None:
 		if (opts.host != None or opts.service != None or opts.start != 'now' or opts.end != '60 minutes' or opts.flexible or opts.not_all_services or opts.author != None or opts.comment != None or opts.child_options != 'DowntimeNoChildren'):
-			print("Downtime (-d) doesn't take any other arguments.")
+			print("Downtime (-d) can only take check (-C) as additional argument.")
 			exit(5)
 		else:
 			opts.api_endpoint="/actions/remove-downtime"
@@ -379,10 +380,26 @@ def curl(api_uri, override_post=False, filter_string=None):
 	body = buffer.getvalue().decode(encoding)
 	return(body)
 
+def reschedule_check(opts):
+	api_endpoint='/actions/reschedule-check/'
+	api_uri=api_url+api_endpoint+'?'+opts.api_query
+
+	if opts.debug:
+		print(color.HEADER+'opts'+color.ENDC+': '+str(opts))
+		print(color.HEADER+'api_uri'+color.ENDC+': '+str(api_uri))
+	body=curl(api_uri, opts.override_post, opts.filter_string)
+	result=loads(body)
+	if opts.debug:
+		print(color.HEADER+'result'+color.ENDC+': '+str(result))
+	from IPython import embed
+	embed()
+
 def main():
 	global api_url
 
 	opts=parse_args()
+	if opts.check:
+		reschedule_check(opts)
 
 	api_uri=api_url+opts.api_endpoint+'?'+opts.api_query
 	body=curl(api_uri, opts.override_post, opts.filter_string)
