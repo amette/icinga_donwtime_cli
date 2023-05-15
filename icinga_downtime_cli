@@ -177,6 +177,7 @@ def parse_args():
 	filter_parser.add_argument('-d','--downtime', help='Downtime', required=False)
 
 	downtime_parser=parser.add_argument_group('Downtimes')
+	downtime_parser.add_argument('-c','--comment', help='Comment - set this to actually set the downtime', required=False, nargs='+')
 	downtime_parser.add_argument('-S','--start', help='Start time', required=False, nargs='+')
 	downtime_parser.add_argument('-E','--end', help='End time', required=False, nargs='+')
 	downtime_parser.add_argument('-f','--flexible', help='Flexible downtime duration', metavar='DURATION', required=False)
@@ -186,7 +187,6 @@ def parse_args():
 	downtime_parser.set_defaults(flexible=False)
 	downtime_parser.set_defaults(child_options="DowntimeNoChildren")
 	downtime_parser.add_argument('-a','--author', help='Author - use if your environment doesn\'t have SUDO_USER set', required=False)
-	downtime_parser.add_argument('-c','--comment', help='Comment - set this to actually set the downtime', required=False, nargs='+')
 	downtime_parser.add_argument('-C','--check', help='Schedule immediate check after setting or before removing downtime', required=False, action='store_true')
 
 	parser.add_argument('--no-color', help='Don\'t use colored output', required=False, action='store_true')
